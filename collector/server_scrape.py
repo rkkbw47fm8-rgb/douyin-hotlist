@@ -7,6 +7,7 @@ import json
 import os
 import time
 import sys
+import urllib.request
 
 OUTPUT_FILE = "/opt/douyin-collector/data.json"
 
