@@ -1,166 +1,135 @@
 """
-Playwright 抖音热榜抓取脚本 v2
-策略：拦截网络请求，从 API 响应中提取热榜数据
+抖音热榜采集器 v3 — 直接调 API
+用手机端 UA 调抖音热榜接口，不需要 Playwright
 """
 
 import json
 import os
+import time
 import sys
-from playwright.sync_api import sync_playwright
 
 OUTPUT_FILE = "/opt/douyin-collector/data.json"
-TARGET_URL = "https://www.douyin.com/hot"
+
+# 抖音热榜API（手机UA可绕过检测）
+API_URL = (
+    "https://www.douyin.com/aweme/v1/web/hot/search/list/"
+    "?device_platform=webapp&aid=6383&channel=channel_pc_web"
+    "&pc_client_type=1&version_code=170400&version_name=17.4.0"
+    "&cookie_enabled=true&screen_width=1920&screen_height=1080"
+    "&browser_language=zh-CN&browser_platform=Win32"
+    "&browser_name=Chrome&browser_version=120.0.0.0"
+)
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Referer": "https://www.douyin.com/",
+    "Origin": "https://www.douyin.com",
+}
 
 
 def scrape():
     """抓取抖音热榜"""
-    items = []
-    api_data = []
+    import urllib.request
 
-    def handle_response(response):
-        """拦截API响应"""
-        url = response.url
-        if '/hot/' in url or 'hot_board' in url or 'hot-search' in url or 'trending' in url:
-            try:
-                data = response.json()
-                api_data.append(data)
-            except:
-                pass
-
+    req = urllib.request.Request(API_URL, headers=HEADERS, method="GET")
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
-            context = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1920, "height": 1080},
-                locale="zh-CN",
-            )
-            page = context.new_page()
-            page.on("response", handle_response)
-
-            # 用 domcontentloaded 代替 networkidle
-            page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=45000)
-            # 等一会儿让JS执行
-            page.wait_for_timeout(5000)
-
-            # 先尝试从 API 数据中提取
-            for data in api_data:
-                extracted = extract_from_api(data)
-                items.extend(extracted)
-
-            # 如果 API 拦截失败，从页面 DOM 提取
-            if not items:
-                items = extract_from_dom(page)
-
-            browser.close()
+        resp = urllib.request.urlopen(req, timeout=15)
+        data = json.loads(resp.read().decode("utf-8"))
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        # 尝试从已有内容提取
-        try:
-            items = extract_from_dom(page)
-        except:
-            pass
+        print(f"❌ API请求失败: {e}", file=sys.stderr)
+        return {"items": [], "count": 0}
+
+    # 提取热榜列表
+    trending = data.get("data", {}).get("trending_list", [])
+    items = []
+
+    # 分类映射
+    category_map = {
+        0: "娱乐", 1: "社会", 2: "生活", 3: "知识",
+        4: "科技", 5: "美食", 6: "财经", 7: "体育",
+        8: "游戏", 9: "时尚", 10: "音乐",
+    }
+
+    lifecycle_map = {
+        0: "增长", 1: "快速增长", 2: "爆发期",
+        3: "峰值", 4: "衰退", 5: "复燃",
+    }
+
+    for i, item in enumerate(trending[:50]):
+        # 提取话题信息
+        sentence = item.get("sentence", "")
+        word = item.get("word", item.get("hot_word", sentence))
+        hot_value = item.get("hot_value", 0)
+        label = item.get("label", 0)
+
+        # 热度值转成可读格式
+        if hot_value >= 10000:
+            heat_str = f"{hot_value / 10000:.1f}w"
+        else:
+            heat_str = str(hot_value)
+
+        category_idx = item.get("category", 0)
+        category = category_map.get(category_idx, "娱乐")
+        lifecycle = lifecycle_map.get(label, "增长")
+
+        # 分类标签
+        tags = [category]
+
+        items.append({
+            "rank": i + 1,
+            "title": f"#{word}",
+            "heat": heat_str,
+            "heatNum": int(hot_value),
+            "trend": round((50 - i) * 0.5, 1),
+            "trendDir": "up" if label <= 2 else "down",
+            "category": category,
+            "lifecycle": lifecycle,
+            "tags": tags,
+        })
+
+    print(f"✅ 采集到 {len(items)} 条热榜数据")
+    for item in items[:5]:
+        print(f"   #{item['rank']} {item['title'][:40]} [{item['category']}] {item['heat']}")
 
     return {"items": items, "count": len(items)}
 
 
-def extract_from_api(data):
-    """从API响应提取热榜"""
-    result = []
-
-    # 递归搜索热榜数据
-    def search(obj, path=""):
-        if isinstance(obj, dict):
-            # 搜索常见热榜字段
-            for key in ["word", "title", "hot_word", "sentence", "name"]:
-                if key in obj and isinstance(obj[key], str) and len(obj[key]) > 2:
-                    heat_val = str(obj.get("hot_value", obj.get("heat", obj.get("score", ""))))
-                    return [{
-                        "rank": obj.get("rank", obj.get("position", 1)),
-                        "title": obj[key],
-                        "heat": heat_val,
-                        "trend": float(obj.get("hot_value", 0)),
-                        "category": obj.get("category", "娱乐"),
-                        "lifecycle": "爆发期",
-                        "tags": ["娱乐"],
-                    }]
-            # 递归
-            for k, v in obj.items():
-                r = search(v, f"{path}.{k}")
-                if r:
-                    result.extend(r)
-        elif isinstance(obj, list):
-            for item in obj:
-                r = search(item, path)
-                if r:
-                    result.extend(r)
-        return []
-
-    search(data)
-    return result
-
-
-def extract_from_dom(page):
-    """从页面DOM提取热榜（降级方案）"""
-    items = []
+def sync_to_backend(items):
+    """同步到后端 API"""
+    payload = json.dumps({"items": items}).encode("utf-8")
+    req = urllib.request.Request(
+        "http://localhost:3000/api/hotlist/sync",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
-        # 尝试多个选择器
-        selectors = [
-            ".hot-list-item", ".search-hot-item",
-            "[class*='hot-item']", "[class*='hotItem']",
-            "[class*='board-item']", "[class*='list-item']",
-            "li", ".title", ".hot-title",
-        ]
-
-        for sel in selectors:
-            els = page.query_selector_all(sel)
-            for i, el in enumerate(els[:30]):
-                text = el.inner_text().strip()
-                if text and len(text) > 4 and '#' in text:
-                    items.append({
-                        "rank": len(items) + 1,
-                        "title": text[:60],
-                        "heat": str((50 - len(items)) * 10) + "w",
-                        "trend": round((50 - len(items)) * 0.5, 1),
-                        "category": "娱乐",
-                        "lifecycle": "增长",
-                    })
-                    if len(items) >= 20:
-                        break
-            if items:
-                break
-
-        # 兜底：直接从 body 文本提取包含 # 的行
-        if not items:
-            body = page.inner_text("body")
-            for line in body.split('\n'):
-                if '#' in line and len(line.strip()) > 5:
-                    items.append({
-                        "rank": len(items) + 1,
-                        "title": line.strip()[:60],
-                        "heat": str((50 - len(items)) * 10) + "w",
-                        "trend": 10.0,
-                        "category": "娱乐",
-                        "lifecycle": "增长",
-                    })
-                    if len(items) >= 20:
-                        break
+        resp = urllib.request.urlopen(req, timeout=10)
+        result = json.loads(resp.read().decode("utf-8"))
+        print(f"✅ 同步成功: {result.get('message', '')}")
     except Exception as e:
-        print(f"DOM提取错误: {e}", file=sys.stderr)
-
-    return items
+        print(f"❌ 同步失败: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
+    print("=" * 40)
+    print("抖音热榜采集器 v3")
+    print("=" * 40)
+
     result = scrape()
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
-    print(f"采集完成: {result['count']} 条, 保存到 {OUTPUT_FILE}")
+
+    if result["items"]:
+        os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+        with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+
+        sync_to_backend(result["items"])
+    else:
+        print("⚠️ 未采集到数据")
+
+    print("=" * 40)
