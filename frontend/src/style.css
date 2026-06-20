@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* ====== 设计 Token (Theme A - 深色数据仪表风) ====== */
+:root {
+  --a-bg: #0F172A;
+  --a-card-bg: #1E293B;
+  --a-card-border: #334155;
+  --a-text-primary: #F1F5F9;
+  --a-text-secondary: #94A3B8;
+  --a-text-muted: #64748B;
+  --a-accent: #06B6D4;
+  --a-accent-secondary: #3B82F6;
+  --a-success: #10B981;
+  --a-warning: #F59E0B;
+  --a-danger: #EF4444;
+  --a-up: #10B981;
+  --a-down: #EF4444;
+  --a-hover: rgba(6, 182, 212, 0.1);
+  --a-nav-bg: #0A0F1E;
+  --a-input-bg: #0F172A;
+  --a-separator: #1E293B;
+  --a-shadow: 0 4px 24px rgba(0,0,0,0.3);
+
+  /* 方案B - 浅色轻资讯风 */
+  --b-bg: #F8FAFC;
+  --b-card-bg: #FFFFFF;
+  --b-card-border: #E2E8F0;
+  --b-text-primary: #0F172A;
+  --b-text-secondary: #64748B;
+  --b-text-muted: #94A3B8;
+  --b-accent: #0EA5E9;
+  --b-accent-secondary: #8B5CF6;
+  --b-success: #10B981;
+  --b-warning: #F59E0B;
+  --b-danger: #EF4444;
+  --b-up: #10B981;
+  --b-down: #EF4444;
+  --b-hover: rgba(14, 165, 233, 0.06);
+  --b-nav-bg: #FFFFFF;
+  --b-input-bg: #F1F5F9;
+  --b-separator: #E2E8F0;
+  --b-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+
+  /* 通用 */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --transition: 0.2s ease;
+}
+
+/* ====== 主题变量映射 ====== */
+body.theme-a {
+  --bg: var(--a-bg);
+  --card-bg: var(--a-card-bg);
+  --card-border: var(--a-card-border);
+  --text-primary: var(--a-text-primary);
+  --text-secondary: var(--a-text-secondary);
+  --text-muted: var(--a-text-muted);
+  --accent: var(--a-accent);
+  --accent-secondary: var(--a-accent-secondary);
+  --success: var(--a-success);
+  --warning: var(--a-warning);
+  --danger: var(--a-danger);
+  --up: var(--a-up);
+  --down: var(--a-down);
+  --hover: var(--a-hover);
+  --nav-bg: var(--a-nav-bg);
+  --input-bg: var(--a-input-bg);
+  --separator: var(--a-separator);
+  --shadow: var(--a-shadow);
+}
+body.theme-b {
+  --bg: var(--b-bg);
+  --card-bg: var(--b-card-bg);
+  --card-border: var(--b-card-border);
+  --text-primary: var(--b-text-primary);
+  --text-secondary: var(--b-text-secondary);
+  --text-muted: var(--b-text-muted);
+  --accent: var(--b-accent);
+  --accent-secondary: var(--b-accent-secondary);
+  --success: var(--b-success);
+  --warning: var(--b-warning);
+  --danger: var(--b-danger);
+  --up: var(--b-up);
+  --down: var(--b-down);
+  --hover: var(--b-hover);
+  --nav-bg: var(--b-nav-bg);
+  --input-bg: var(--b-input-bg);
+  --separator: var(--b-separator);
+  --shadow: var(--b-shadow);
+}
+
+/* ====== 基础样式 ====== */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Noto Sans SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: var(--bg);
+  color: var(--text-primary);
+  transition: background var(--transition), color var(--transition);
+  margin: 0;
+  padding: 0;
+}
+
+/* ====== 滚动条 ====== */
+.theme-a ::-webkit-scrollbar { width: 6px; }
+.theme-a ::-webkit-scrollbar-thumb { background: var(--a-card-border); border-radius: 3px; }
+.theme-a ::-webkit-scrollbar-track { background: transparent; }
+.theme-b ::-webkit-scrollbar { width: 6px; }
+.theme-b ::-webkit-scrollbar-thumb { background: var(--b-card-border); border-radius: 3px; }
+.theme-b ::-webkit-scrollbar-track { background: transparent; }
