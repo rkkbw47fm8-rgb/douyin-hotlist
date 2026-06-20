@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
+  base: '/douyin-hotlist/',
   server: {
     port: 5173,
     proxy: {
