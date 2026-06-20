@@ -1,35 +1,43 @@
 import { Router } from 'express'
+import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const DATA_FILE = join(__dirname, '../../data/hotlist.json')
 
 const router = Router()
 
-// 模拟热榜数据
-const mockHotList = [
-  { id: 1, rank: 1, title: '#高考成绩即将公布 各地查分时间汇总', heat: '856.2w', heatNum: 8562000, trend: 28.5, trendDir: 'up', category: '社会', lifecycle: '爆发期', tags: ['社会', '教育'] },
-  { id: 2, rank: 2, title: '#暑期档电影票房破30亿 你看了几部？', heat: '672.4w', heatNum: 6724000, trend: 15.2, trendDir: 'up', category: '娱乐', lifecycle: '峰值', tags: ['娱乐', '电影'] },
-  { id: 3, rank: 3, title: '#City不City 海外博主带火中国旅游新梗', heat: '543.1w', heatNum: 5431000, trend: 42.3, trendDir: 'up', category: '生活', lifecycle: '快速增长', tags: ['生活', '旅游', '梗'] },
-  { id: 4, rank: 4, title: '#AI换脸诈骗新手法 警方紧急提醒', heat: '432.8w', heatNum: 4328000, trend: 5.1, trendDir: 'down', category: '社会', lifecycle: '峰值', tags: ['社会', '科技', '安全'] },
-  { id: 5, rank: 5, title: '#全网挑战：连续30天早睡早起', heat: '398.5w', heatNum: 3985000, trend: 22.7, trendDir: 'up', category: '生活', lifecycle: '快速增长', tags: ['生活', '健康', '挑战'] },
-  { id: 6, rank: 6, title: '#密室大逃脱最新一期你看了吗', heat: '356.2w', heatNum: 3562000, trend: 8.3, trendDir: 'up', category: '娱乐', lifecycle: '增长', tags: ['娱乐', '综艺'] },
-  { id: 7, rank: 7, title: '#夏日饮品测评 哪杯最好喝？', heat: '312.7w', heatNum: 3127000, trend: 3.2, trendDir: 'down', category: '美食', lifecycle: '成熟', tags: ['美食', '夏日', '测评'] },
-  { id: 8, rank: 8, title: '#00后职场生存指南', heat: '289.4w', heatNum: 2894000, trend: 18.6, trendDir: 'up', category: '社会', lifecycle: '快速增长', tags: ['社会', '职场', '00后'] },
-  { id: 9, rank: 9, title: '#这届年轻人开始反向消费', heat: '256.1w', heatNum: 2561000, trend: 11.4, trendDir: 'up', category: '财经', lifecycle: '增长', tags: ['财经', '消费', '年轻人'] },
-  { id: 10, rank: 10, title: '#歌手2024 总决赛倒计时', heat: '234.8w', heatNum: 2348000, trend: 35.2, trendDir: 'up', category: '娱乐', lifecycle: '快速增长', tags: ['娱乐', '音乐', '综艺'] },
-]
-
-const statsData = {
-  totalTopics: 50,
-  newTopics: 8,
-  newTrend: 3,
-  burstTopics: 5,
-  burstTrend: -2,
-  avgHeat: '28.4w',
-  avgHeatTrend: 8,
+// 确保数据目录存在
+import { mkdirSync } from 'fs'
+const dataDir = join(__dirname, '../../data')
+if (!existsSync(dataDir)) {
+  mkdirSync(dataDir, { recursive: true })
 }
 
 // GET /api/hotlist — 获取热榜列表
 router.get('/', (req, res) => {
   const { category } = req.query
-  let list = [...mockHotList]
+  let list = []
+  const stats = { totalTopics: 0, newTopics: 0, burstTopics: 0, avgHeat: '0' }
+
+  // 尝试读取真实数据
+  if (existsSync(DATA_FILE)) {
+    try {
+      const raw = readFileSync(DATA_FILE, 'utf-8')
+      const data = JSON.parse(raw)
+      list = data.list || []
+    } catch (e) {
+      // fallback to mock
+    }
+  }
+
+  // 如果没有真实数据，用 mock
+  if (list.length === 0) {
+    list = getMockList()
+  }
+
+  // 分类筛选
   if (category && category !== '全部') {
     if (category === '⬆ 上升') {
       list = list.filter(i => i.trendDir === 'up')
@@ -37,20 +45,62 @@ router.get('/', (req, res) => {
       list = list.filter(i => i.category === category)
     }
   }
-  res.json({ code: 0, data: { list, stats: statsData, total: list.length } })
+
+  // 计算统计
+  stats.totalTopics = list.length
+  stats.newTopics = Math.ceil(list.length * 0.15)
+  stats.burstTopics = list.filter(i => (i.trend || 0) > 20).length
+  const heats = list.map(i => parseFloat(String(i.heat || '0').replace('w', ''))).filter(Boolean)
+  stats.avgHeat = heats.length ? (heats.reduce((a, b) => a + b, 0) / heats.length).toFixed(1) + 'w' : '0'
+
+  res.json({ code: 0, data: { list, stats, total: list.length } })
 })
 
-// GET /api/hotlist/:id — 获取详情
+// POST /api/hotlist/sync — 采集器推送数据
+router.post('/sync', (req, res) => {
+  const { items } = req.body
+  if (!items || !Array.isArray(items)) {
+    return res.status(400).json({ code: 400, message: '无效数据' })
+  }
+
+  // 处理数据
+  const list = items.map((item, i) => ({
+    id: i + 1,
+    rank: i + 1,
+    title: item.title || `话题${i+1}`,
+    heat: item.heat || '0',
+    heatNum: parseInt(String(item.heat || '0').replace(/[^0-9]/g, '')) || 0,
+    trend: item.trend || 0,
+    trendDir: (item.trend || 0) >= 0 ? 'up' : 'down',
+    category: item.category || '娱乐',
+    lifecycle: item.lifecycle || '增长',
+    tags: item.tags || [item.category || '娱乐'],
+    updatedAt: new Date().toISOString(),
+  }))
+
+  // 存文件
+  writeFileSync(DATA_FILE, JSON.stringify({ list, updatedAt: new Date().toISOString() }, null, 2))
+
+  res.json({ code: 0, message: `同步成功：${list.length} 条`, count: list.length })
+})
+
+// GET /api/hotlist/:id — 详情
 router.get('/:id', (req, res) => {
   const id = Number(req.params.id)
-  const item = mockHotList.find(i => i.id === id)
-  if (!item) {
-    return res.status(404).json({ code: 404, message: '话题不存在' })
+  let list = []
+  if (existsSync(DATA_FILE)) {
+    try {
+      const raw = readFileSync(DATA_FILE, 'utf-8')
+      list = JSON.parse(raw).list || []
+    } catch (e) {}
   }
+  if (list.length === 0) list = getMockList()
+  const item = list.find(i => i.id === id)
+  if (!item) return res.status(404).json({ code: 404, message: '话题不存在' })
   res.json({ code: 0, data: item })
 })
 
-// GET /api/hotlist/:id/trend — 获取趋势数据
+// GET /api/hotlist/:id/trend — 趋势
 router.get('/:id/trend', (req, res) => {
   const trends = {
     1: [320, 450, 580, 620, 710, 780, 790, 810, 830, 856, 852, 840],
@@ -61,5 +111,13 @@ router.get('/:id/trend', (req, res) => {
   const trend = trends[Number(req.params.id)] || []
   res.json({ code: 0, data: trend })
 })
+
+function getMockList() {
+  return [
+    { id: 1, rank: 1, title: '#高考成绩即将公布 各地查分时间汇总', heat: '856.2w', heatNum: 8562000, trend: 28.5, trendDir: 'up', category: '社会', lifecycle: '爆发期', tags: ['社会', '教育'] },
+    { id: 2, rank: 2, title: '#暑期档电影票房破30亿 你看了几部？', heat: '672.4w', heatNum: 6724000, trend: 15.2, trendDir: 'up', category: '娱乐', lifecycle: '峰值', tags: ['娱乐', '电影'] },
+    { id: 3, rank: 3, title: '#City不City 海外博主带火中国旅游新梗', heat: '543.1w', heatNum: 5431000, trend: 42.3, trendDir: 'up', category: '生活', lifecycle: '快速增长', tags: ['生活', '旅游', '梗'] },
+  ]
+}
 
 export default router
