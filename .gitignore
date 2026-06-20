@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-canvas/
+.vite/
+*.local
+.env
+.env.local
+*.png
+*.jpg
+preview-*
+.DS_Store
+*.log
