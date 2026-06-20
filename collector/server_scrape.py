@@ -45,52 +45,74 @@ def scrape():
         print(f"❌ API请求失败: {e}", file=sys.stderr)
         return {"items": [], "count": 0}
 
-    # 提取热榜列表
+    # 提取热榜列表（优先 word_list 完整榜单，降级 trending_list）
+    word_list = data.get("data", {}).get("word_list", [])
     trending = data.get("data", {}).get("trending_list", [])
+    source = word_list if len(word_list) >= 10 else trending
     items = []
 
-    # 分类映射
-    category_map = {
-        0: "娱乐", 1: "社会", 2: "生活", 3: "知识",
-        4: "科技", 5: "美食", 6: "财经", 7: "体育",
-        8: "游戏", 9: "时尚", 10: "音乐",
-    }
+    # 关键词→分类映射（因为API不返回分类）
+    def guess_category(title):
+        kw = {
+            "娱乐": ["明星","电影","综艺","歌手","唱","歌","音乐","舞台","演出","娱乐","八卦","偶像","粉丝"],
+            "社会": ["警方","提醒","官方","发布","政策","紧急","事故","台风","地震","灾害","暴雨","预警","疫情","通报","调查"],
+            "生活": ["健康","运动","健身","美食","探店","旅游","穿搭","护肤","减肥","保养","家居","宠物","日常"],
+            "科技": ["AI","人工智能","芯片","手机","华为","苹果","小米","特斯拉","科技","数字化","智能","机器人","数据"],
+            "美食": ["吃","餐厅","菜","美食","烹饪","下厨","小吃","网红店"],
+            "财经": ["股票","基金","房价","消费","价格","降价","涨价","市场","经济","投资","理财"],
+            "体育": ["球","奥运","比赛","冠军","运动员","金牌","赛事","NBA","足球","篮球"],
+            "教育": ["高考","考试","成绩","大学","学校","考生","查分","分数线","中考","毕业"],
+        }
+        for cat, keywords in kw.items():
+            if any(k in title for k in keywords):
+                return cat
+        return "娱乐"
 
-    lifecycle_map = {
-        0: "增长", 1: "快速增长", 2: "爆发期",
-        3: "峰值", 4: "衰退", 5: "复燃",
-    }
-
-    for i, item in enumerate(trending[:50]):
-        # 提取话题信息
-        sentence = item.get("sentence", "")
-        word = item.get("word", item.get("hot_word", sentence))
+    for i, item in enumerate(source[:50]):
+        word = item.get("word", "")
         hot_value = item.get("hot_value", 0)
         label = item.get("label", 0)
+        is_n1 = item.get("is_n1", False)
 
         # 热度值转成可读格式
-        if hot_value >= 10000:
+        if hot_value >= 100000000:
+            heat_str = f"{hot_value / 100000000:.1f}亿"
+        elif hot_value >= 10000:
             heat_str = f"{hot_value / 10000:.1f}w"
         else:
             heat_str = str(hot_value)
 
-        category_idx = item.get("category", 0)
-        category = category_map.get(category_idx, "娱乐")
-        lifecycle = lifecycle_map.get(label, "增长")
+        # 推断分类
+        category = guess_category(word)
 
-        # 分类标签
-        tags = [category]
+        # 热度阶段
+        lifecycle = "增长"
+        if is_n1:
+            lifecycle = "爆发期"
+        elif hot_value > 10000000:
+            lifecycle = "峰值"
+        elif hot_value > 5000000:
+            lifecycle = "快速增长"
+        elif label == 5:
+            lifecycle = "复燃"
+
+        # 趋势方向：用item在数组中的位置和label综合判断
+        trend_dir = "up"
+        trend_val = round((50 - i) * 0.3, 1)
+        if label >= 4:
+            trend_dir = "down"
+            trend_val = -trend_val
 
         items.append({
             "rank": i + 1,
             "title": f"#{word}",
             "heat": heat_str,
             "heatNum": int(hot_value),
-            "trend": round((50 - i) * 0.5, 1),
-            "trendDir": "up" if label <= 2 else "down",
+            "trend": trend_val,
+            "trendDir": trend_dir,
             "category": category,
             "lifecycle": lifecycle,
-            "tags": tags,
+            "tags": [category],
         })
 
     print(f"✅ 采集到 {len(items)} 条热榜数据")
